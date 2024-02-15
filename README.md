@@ -24,7 +24,6 @@ Clone this repository to your local machine:
 git clone <repository-url>
 cd <repository-name>
 ```
-
 ### 2. Set up Variables
 
 Create a `variables.tf` file to specify values for the required variables. You can use the following template:
