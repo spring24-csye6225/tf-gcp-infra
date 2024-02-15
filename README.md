@@ -23,6 +23,7 @@ Clone this repository to your local machine:
 ```bash
 git clone <repository-url>
 cd <repository-name>
+```
 
 ### 2. Set up Variables
 
@@ -31,6 +32,7 @@ Create a `variables.tf` file to specify values for the required variables. You c
 ```hcl
 service_key_path = "/path/to/your/service-account-key.json"
 project_name     = "your-project-name"
+```
 
 ### 3. Initialize Terraform
 
@@ -38,6 +40,7 @@ Initialize Terraform in the project directory:
 
 ```bash
 terraform init
+```
 
 ### 4. Review and apply changes
 
@@ -45,6 +48,7 @@ Review the Terraform plan to ensure it matches your expectations:
 
 ```bash
 terraform plan
+```
 
 ### 5. Create Infrastructure
 
@@ -52,3 +56,4 @@ if everything looks good, apply the changes to create the infrastructure:
 
 ```bash
 terraform apply
+```
