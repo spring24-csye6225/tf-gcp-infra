@@ -1,7 +1,7 @@
 variable "service_key_path" {
   description = "Path to the service key JSON file"
   type        = string
-  default     = "/Users/vakitisaikumarreddy/Downloads/TerraformConfig/csye6225-spring-e2cbfe24ab49.json"
+  default     = "/Users/vakitisaikumarreddy/Downloads/vakiti-dev-c00eff790fae.json"
 }
 
 variable "region" {
@@ -19,17 +19,17 @@ variable "vpc_name" {
 variable "project_name" {
   description = "GCP project name"
   type        = string
-  default     = "csye6225-spring"
+  default     = "vakiti-dev"
 }
 
 variable "webapp_subnet_cidr" {
   description = "CIDR range for the webapp subnet"
   type        = string
-  default     = "10.0.1.0/24"
+  default     = "10.0.1.0/24" // Example update - Adjust as needed
 }
 
 variable "db_subnet_cidr" {
   description = "CIDR range for the database subnet"
   type        = string
-  default     = "10.0.2.0/24"
+  default     = "10.0.2.0/24" // Example update - Adjust as needed
 }
