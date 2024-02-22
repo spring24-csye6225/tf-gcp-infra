@@ -7,7 +7,7 @@ provider "google" {
 resource "google_compute_network" "vpc_network" {
   name                            = var.vpc_name
   auto_create_subnetworks         = false
-  routing_mode                    = "REGIONAL"
+  routing_mode                    = var.routing_mode
   delete_default_routes_on_create = true
 }
 
@@ -33,18 +33,18 @@ resource "google_compute_route" "webapp_route" {
 }
 
 resource "google_compute_instance" "my-web-server" {
-  name         = "web-server"    # Updated name
-  zone         = "us-central1-a" # Adjust zone if needed
-  machine_type = "e2-medium"     # Adjust machine type if needed
+  name         = var.vm_name
+  zone         = var.zone
+  machine_type = var.machine_type
   tags         = ["web-server"]
 
   boot_disk {
     auto_delete = true
-    device_name = "my-web-server" # Align device name with instance 
+    device_name = var.vm_name // Align device name 
     initialize_params {
-      image = "projects/vakiti-dev/global/images/my-app-image-1708543596"
-      size  = 20
-      type  = "pd-balanced"
+      image = var.image
+      size  = var.boot_disk_size
+      type  = var.boot_disk_type
     }
   }
 
@@ -52,25 +52,21 @@ resource "google_compute_instance" "my-web-server" {
     subnetwork = google_compute_subnetwork.webapp_subnet.name
     access_config {
       network_tier = "PREMIUM"
-      # Assign a public IP if needed
+      # Assign a public IP if needed (add a variable and make this conditional)
     }
   }
-
-  # ... other configuration: service_account, shielded_instance_config, tags (consider variables here as well)
 }
-
 
 resource "google_compute_firewall" "allow-web-traffic" {
   name        = "allow-web-traffic"
-  network     = google_compute_network.vpc_network.name // Reference your VPC network 
+  network     = google_compute_network.vpc_network.name
   description = "Allow HTTP traffic to instances with the 'web-server' tag"
 
   allow {
     protocol = "tcp"
-    ports    = ["8080", "22"]
+    ports    = ["8080", "80"]
   }
 
   target_tags   = ["web-server"]
-  source_ranges = ["0.0.0.0/0"] // Allow access from anywhere (public internet)
+  source_ranges = ["0.0.0.0/0"]
 }
-
