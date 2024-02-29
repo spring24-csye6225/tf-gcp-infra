@@ -52,7 +52,7 @@ variable "machine_type" {
 variable "image" {
   description = "Image file path"
   type        = string
-  default     = "projects/vakiti-dev/global/images/my-app-image-1708559725"
+  default     = "projects/vakiti-dev/global/images/my-app-image-1709190333"
 }
 variable "boot_disk_size" {
   description = "Boot Disk Size"
