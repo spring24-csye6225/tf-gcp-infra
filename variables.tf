@@ -70,3 +70,60 @@ variable "routing_mode" {
   type        = string
   default     = "REGIONAL"
 }
+
+variable "route_name" {
+  default = "webapp-internet-route"
+}
+
+variable "dest_range" {
+  default = "0.0.0.0/0"
+}
+
+variable "next_hop_gateway" {
+  default = "default-internet-gateway"
+}
+
+variable "global_address_name" {
+  default = "global-psconnect-ip2"
+}
+
+variable "address_type" {
+  default = "INTERNAL"
+}
+
+variable "address_purpose" {
+  default = "VPC_PEERING"
+}
+
+variable "prefix_length" {
+  default = 16
+}
+
+variable "service" {
+  default = "servicenetworking.googleapis.com"
+}
+
+variable "sql_instance_name" {
+  default = "my-cloudsql-instance"
+}
+
+variable "sql_db_name" {
+  default = "webapp"
+}
+
+variable "user_name" {
+  default = "webapp"
+}
+
+variable "firewall_name" {
+  default = "allow-web-traffic"
+}
+
+variable "network_tier" {
+  default = "PREMIUM"
+}
+
+variable "http_ports" {
+  default = ["8080", "80"]
+}
+

@@ -26,68 +26,33 @@ resource "google_compute_subnetwork" "db_subnet" {
 }
 
 resource "google_compute_route" "webapp_route" {
-  name             = "webapp-internet-route"
-  dest_range       = "0.0.0.0/0"
+  name             = var.route_name
+  dest_range       = var.dest_range
   network          = google_compute_network.vpc_network.self_link
-  next_hop_gateway = "default-internet-gateway"
+  next_hop_gateway = var.next_hop_gateway
 }
-
-
 
 resource "google_compute_global_address" "default" {
   provider      = google
   project       = var.project_name
-  name          = "global-psconnect-ip2"
-  address_type  = "INTERNAL"
-  purpose       = "VPC_PEERING"
-  prefix_length = 16
+  name          = var.global_address_name
+  address_type  = var.address_type
+  purpose       = var.address_purpose
+  prefix_length = var.prefix_length
   network       = google_compute_network.vpc_network.id
-}
-
-resource "google_service_networking_connection" "my_service_connection" {
-  network                 = google_compute_network.vpc_network.id
-  service                 = "servicenetworking.googleapis.com"
-  reserved_peering_ranges = [google_compute_global_address.default.name]
-}
-
-# Cloud SQL database instance
-resource "google_sql_database_instance" "primary_instance" {
-  name                = "my-cloudsql-instance"
-  database_version    = "MYSQL_8_0" // Or your desired database engine/version
-  region              = var.region
-  deletion_protection = false
-  depends_on          = [google_service_networking_connection.my_service_connection]
-
-  settings {
-    tier = "db-f1-micro" # Choose a suitable machine type 
-
-    ip_configuration {
-      ipv4_enabled    = false
-      private_network = google_compute_network.vpc_network.id
-    }
-  }
-}
-
-
-# Cloud SQL database
-resource "google_sql_database" "webapp_database" {
-  name     = "webapp"
-  instance = google_sql_database_instance.primary_instance.name
 }
 
 # Random Password Generation
 resource "random_password" "database_password" {
-  length           = 16 # Adjust the password length if needed
+  length           = 16
   special          = true
-  override_special = "_%@" # Customize special characters if needed 
+  override_special = "_%@"
 }
 
-# Cloud SQL database users
-resource "google_sql_user" "webapp_user" {
-  name     = "webapp"
-  instance = google_sql_database_instance.primary_instance.name
-  password = random_password.database_password.result
-  host     = "%"
+resource "google_service_networking_connection" "my_service_connection" {
+  network                 = google_compute_network.vpc_network.id
+  service                 = var.service
+  reserved_peering_ranges = [google_compute_global_address.default.name]
 }
 
 resource "google_compute_instance" "my-web-server" {
@@ -105,7 +70,7 @@ resource "google_compute_instance" "my-web-server" {
 
   boot_disk {
     auto_delete = true
-    device_name = var.vm_name // Align device name 
+    device_name = var.vm_name
     initialize_params {
       image = var.image
       size  = var.boot_disk_size
@@ -117,19 +82,47 @@ resource "google_compute_instance" "my-web-server" {
     subnetwork = google_compute_subnetwork.webapp_subnet.name
     access_config {
       network_tier = "PREMIUM"
-      # Assign a public IP if needed (add a variable and make this conditional)
     }
   }
 }
 
+resource "google_sql_database_instance" "primary_instance" {
+  name                = var.sql_instance_name
+  database_version    = "MYSQL_8_0"
+  region              = var.region
+  deletion_protection = false
+  depends_on          = [google_service_networking_connection.my_service_connection]
+
+  settings {
+    tier = "db-f1-micro"
+
+    ip_configuration {
+      ipv4_enabled    = false
+      private_network = google_compute_network.vpc_network.id
+    }
+  }
+}
+
+resource "google_sql_database" "webapp_database" {
+  name     = var.sql_db_name
+  instance = google_sql_database_instance.primary_instance.name
+}
+
+resource "google_sql_user" "webapp_user" {
+  name     = var.user_name
+  instance = google_sql_database_instance.primary_instance.name
+  password = random_password.database_password.result
+  host     = "%"
+}
+
 resource "google_compute_firewall" "allow-web-traffic" {
-  name        = "allow-web-traffic"
+  name        = var.firewall_name
   network     = google_compute_network.vpc_network.name
   description = "Allow HTTP traffic to instances with the 'web-server' tag"
 
   allow {
     protocol = "tcp"
-    ports    = ["8080", "80"]
+    ports    = var.http_ports
   }
 
   target_tags   = ["web-server"]
