@@ -56,10 +56,11 @@ resource "google_service_networking_connection" "my_service_connection" {
 }
 
 resource "google_compute_instance" "my-web-server" {
-  name         = var.vm_name
-  zone         = var.zone
-  machine_type = var.machine_type
-  tags         = ["web-server"]
+  name                      = var.vm_name
+  zone                      = var.zone
+  machine_type              = var.machine_type
+  tags                      = ["web-server"]
+  allow_stopping_for_update = true
 
   metadata = {
     db_host     = google_sql_database_instance.primary_instance.ip_address[0].ip_address
@@ -83,6 +84,11 @@ resource "google_compute_instance" "my-web-server" {
     access_config {
       network_tier = "PREMIUM"
     }
+  }
+
+  service_account {
+    email  = google_service_account.app_service_account.email
+    scopes = ["cloud-platform"]
   }
 }
 
@@ -128,3 +134,34 @@ resource "google_compute_firewall" "allow-web-traffic" {
   target_tags   = ["web-server"]
   source_ranges = ["0.0.0.0/0"]
 }
+
+resource "google_dns_record_set" "your_domain_a_record" {
+  name         = "ns1.csye6225-vakiti.me."
+  managed_zone = "csye6225-vakiti"
+  type         = "A"
+  ttl          = 300
+  rrdatas      = [google_compute_instance.my-web-server.network_interface[0].access_config[0].nat_ip]
+}
+
+# resource "google_dns_managed_zone" "your_dns_zone" {
+#   name     = "csye6225-vakiti"
+#   dns_name = "csye6225-vakiti.me."
+# }
+
+resource "google_service_account" "app_service_account" {
+  account_id   = "app-service-account"
+  display_name = "Service Account for my Application"
+}
+
+resource "google_project_iam_member" "logging_admin_role" {
+  project = google_service_account.app_service_account.project
+  role    = "roles/logging.admin"
+  member  = "serviceAccount:${google_service_account.app_service_account.email}"
+}
+
+resource "google_project_iam_member" "monitoring_metric_writer_role" {
+  project = google_service_account.app_service_account.project
+  role    = "roles/monitoring.metricWriter"
+  member  = "serviceAccount:${google_service_account.app_service_account.email}"
+}
+
