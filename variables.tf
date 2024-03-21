@@ -124,6 +124,6 @@ variable "network_tier" {
 }
 
 variable "http_ports" {
-  default = ["8080", "80"]
+  default = ["8080", "80", "22"]
 }
 
