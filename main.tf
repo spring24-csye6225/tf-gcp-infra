@@ -88,7 +88,7 @@ resource "google_compute_instance" "my-web-server" {
 
   service_account {
     email  = google_service_account.app_service_account.email
-    scopes = ["cloud-platform"]
+    scopes = ["https://www.googleapis.com/auth/logging.admin", "https://www.googleapis.com/auth/monitoring.write"]
   }
 }
 
