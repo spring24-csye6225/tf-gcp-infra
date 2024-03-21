@@ -52,7 +52,7 @@ variable "machine_type" {
 variable "image" {
   description = "Image file path"
   type        = string
-  default     = "projects/vakiti-dev/global/images/my-app-image-1709190333"
+  default     = "projects/vakiti-dev/global/images/my-app-image-1710913253"
 }
 variable "boot_disk_size" {
   description = "Boot Disk Size"
@@ -124,6 +124,6 @@ variable "network_tier" {
 }
 
 variable "http_ports" {
-  default = ["8080", "80"]
+  default = ["8080", "80", "22"]
 }
 
