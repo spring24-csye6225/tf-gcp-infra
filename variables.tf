@@ -127,3 +127,11 @@ variable "http_ports" {
   default = ["8080", "80"]
 }
 
+variable "mailgun_api_key" {
+  type = string
+}
+
+variable "mailgun_domain" {
+  type = string
+}
+

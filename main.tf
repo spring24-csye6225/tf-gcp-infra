@@ -87,8 +87,12 @@ resource "google_compute_instance" "my-web-server" {
   }
 
   service_account {
-    email  = google_service_account.app_service_account.email
-    scopes = ["https://www.googleapis.com/auth/logging.admin", "https://www.googleapis.com/auth/monitoring.write"]
+    email = google_service_account.app_service_account.email
+    scopes = [
+      "https://www.googleapis.com/auth/logging.admin",
+      "https://www.googleapis.com/auth/monitoring.write",
+      "https://www.googleapis.com/auth/pubsub"
+    ]
   }
 }
 
@@ -143,11 +147,6 @@ resource "google_dns_record_set" "your_domain_a_record" {
   rrdatas      = [google_compute_instance.my-web-server.network_interface[0].access_config[0].nat_ip]
 }
 
-# resource "google_dns_managed_zone" "your_dns_zone" {
-#   name     = "csye6225-vakiti"
-#   dns_name = "csye6225-vakiti.me."
-# }
-
 resource "google_service_account" "app_service_account" {
   account_id   = "app-service-account"
   display_name = "Service Account for my Application"
@@ -164,4 +163,98 @@ resource "google_project_iam_member" "monitoring_metric_writer_role" {
   role    = "roles/monitoring.metricWriter"
   member  = "serviceAccount:${google_service_account.app_service_account.email}"
 }
+
+resource "google_project_iam_member" "pubsub_publisher_role" {
+  project = google_service_account.app_service_account.project
+  role    = "roles/pubsub.publisher"
+  member  = "serviceAccount:${google_service_account.app_service_account.email}"
+}
+
+
+# resource "google_sql_table" "verification_tokens" {
+#   provider = google-beta
+#   database = google_sql_database.webapp_database.name
+#   instance = google_sql_database_instance.primary_instance.name
+
+#   column {
+#     name = "token"
+#     type = "STRING"
+#   }
+
+#   column {
+#     name = "email"
+#     type = "STRING"
+#   }
+
+#   column {
+#     name = "expiration"
+#     type = "TIMESTAMP"
+#   }
+# }
+
+
+resource "google_pubsub_topic" "user_verification" {
+  name = "verify_email"
+}
+
+resource "google_pubsub_subscription" "user_verification_subscription" {
+  name  = "user-verification-subscription"
+  topic = google_pubsub_topic.user_verification.name
+
+  ack_deadline_seconds       = 20
+  message_retention_duration = "86400s" # 1 day
+}
+
+resource "google_storage_bucket" "function_code_bucket" {
+  name          = "my-function-code-bucket-vakiti"
+  location      = var.region
+  force_destroy = true
+}
+
+resource "google_storage_bucket_object" "function_code" {
+  name   = "user_verification_function.zip"
+  source = "function.zip"
+  bucket = google_storage_bucket.function_code_bucket.name
+}
+
+# resource "google_project_iam_member" "sql_client" {
+#   project = var.project_name
+#   role    = "roles/cloudsql.client"
+#   member  = "serviceAccount:${google_service_account.app_service_account.email}"
+# }
+
+resource "google_vpc_access_connector" "my_connector" {
+  name          = "my-vpc-connector"
+  region        = var.region
+  network       = google_compute_network.vpc_network.name
+  ip_cidr_range = "10.8.0.0/28" # Example CIDR, adjust as needed
+}
+
+
+resource "google_cloudfunctions_function" "user_verification" {
+  name                  = "verify_email"
+  region                = var.region
+  source_archive_bucket = google_storage_bucket.function_code_bucket.name
+  source_archive_object = google_storage_bucket_object.function_code.name
+  runtime               = "python39"
+  available_memory_mb   = 128
+  vpc_connector         = google_vpc_access_connector.my_connector.name
+  # service_account_email = google_service_account.app_service_account.email
+
+  event_trigger {
+    event_type = "google.pubsub.topic.publish"
+    resource   = google_pubsub_topic.user_verification.id
+  }
+
+  environment_variables = {
+    DB_USER            = google_sql_user.webapp_user.name
+    DB_PASSWORD        = random_password.database_password.result
+    DB_NAME            = google_sql_database.webapp_database.name
+    DB_HOST            = google_sql_database_instance.primary_instance.ip_address[0].ip_address
+    MAILGUN_API_KEY    = var.mailgun_api_key
+    MAILGUN_DOMAIN     = var.mailgun_domain
+    DB_CONNECTION_NAME = google_sql_database_instance.primary_instance.connection_name
+  }
+}
+
 
