@@ -171,38 +171,17 @@ resource "google_project_iam_member" "pubsub_publisher_role" {
 }
 
 
-# resource "google_sql_table" "verification_tokens" {
-#   provider = google-beta
-#   database = google_sql_database.webapp_database.name
-#   instance = google_sql_database_instance.primary_instance.name
-
-#   column {
-#     name = "token"
-#     type = "STRING"
-#   }
-
-#   column {
-#     name = "email"
-#     type = "STRING"
-#   }
-
-#   column {
-#     name = "expiration"
-#     type = "TIMESTAMP"
-#   }
-# }
-
-
 resource "google_pubsub_topic" "user_verification" {
   name = "verify_email"
 }
+
 
 resource "google_pubsub_subscription" "user_verification_subscription" {
   name  = "user-verification-subscription"
   topic = google_pubsub_topic.user_verification.name
 
   ack_deadline_seconds       = 20
-  message_retention_duration = "86400s" # 1 day
+  message_retention_duration = "604800s" # 7 days
 }
 
 resource "google_storage_bucket" "function_code_bucket" {
@@ -217,17 +196,11 @@ resource "google_storage_bucket_object" "function_code" {
   bucket = google_storage_bucket.function_code_bucket.name
 }
 
-# resource "google_project_iam_member" "sql_client" {
-#   project = var.project_name
-#   role    = "roles/cloudsql.client"
-#   member  = "serviceAccount:${google_service_account.app_service_account.email}"
-# }
-
 resource "google_vpc_access_connector" "my_connector" {
   name          = "my-vpc-connector"
   region        = var.region
   network       = google_compute_network.vpc_network.name
-  ip_cidr_range = "10.8.0.0/28" # Example CIDR, adjust as needed
+  ip_cidr_range = "10.8.0.0/28"
 }
 
 
@@ -239,7 +212,6 @@ resource "google_cloudfunctions_function" "user_verification" {
   runtime               = "python39"
   available_memory_mb   = 128
   vpc_connector         = google_vpc_access_connector.my_connector.name
-  # service_account_email = google_service_account.app_service_account.email
 
   event_trigger {
     event_type = "google.pubsub.topic.publish"
