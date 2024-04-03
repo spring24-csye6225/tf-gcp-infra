@@ -55,12 +55,50 @@ resource "google_service_networking_connection" "my_service_connection" {
   reserved_peering_ranges = [google_compute_global_address.default.name]
 }
 
-resource "google_compute_instance" "my-web-server" {
-  name                      = var.vm_name
-  zone                      = var.zone
-  machine_type              = var.machine_type
-  tags                      = ["web-server"]
-  allow_stopping_for_update = true
+# resource "google_compute_instance_template" "webapp_template" {
+#   name                      = var.vm_name
+#   zone                      = var.zone
+#   machine_type              = var.machine_type
+#   tags                      = ["web-server"]
+#   allow_stopping_for_update = true
+
+#   metadata = {
+#     db_host     = google_sql_database_instance.primary_instance.ip_address[0].ip_address
+#     db_user     = google_sql_user.webapp_user.name
+#     db_password = random_password.database_password.result
+#   }
+#   metadata_startup_script = file("startup.sh")
+
+#   boot_disk {
+#     auto_delete = true
+#     device_name = var.vm_name
+#     initialize_params {
+#       image = var.image
+#       size  = var.boot_disk_size
+#       type  = var.boot_disk_type
+#     }
+#   }
+
+#   network_interface {
+#     subnetwork = google_compute_subnetwork.webapp_subnet.name
+#     access_config {
+#       network_tier = "PREMIUM"
+#     }
+#   }
+
+#   service_account {
+#     email = google_service_account.app_service_account.email
+#     scopes = [
+#       "https://www.googleapis.com/auth/logging.admin",
+#       "https://www.googleapis.com/auth/monitoring.write",
+#       "https://www.googleapis.com/auth/pubsub"
+#     ]
+#   }
+# }
+
+resource "google_compute_instance_template" "webapp_template" {
+  name_prefix  = "webapp-template-"
+  machine_type = var.machine_type
 
   metadata = {
     db_host     = google_sql_database_instance.primary_instance.ip_address[0].ip_address
@@ -69,14 +107,10 @@ resource "google_compute_instance" "my-web-server" {
   }
   metadata_startup_script = file("startup.sh")
 
-  boot_disk {
-    auto_delete = true
-    device_name = var.vm_name
-    initialize_params {
-      image = var.image
-      size  = var.boot_disk_size
-      type  = var.boot_disk_type
-    }
+  disk {
+    source_image = var.image
+    auto_delete  = true
+    boot         = true
   }
 
   network_interface {
@@ -94,7 +128,14 @@ resource "google_compute_instance" "my-web-server" {
       "https://www.googleapis.com/auth/pubsub"
     ]
   }
+
+  tags = ["web-server"]
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
+
 
 resource "google_sql_database_instance" "primary_instance" {
   name                = var.sql_instance_name
@@ -137,14 +178,6 @@ resource "google_compute_firewall" "allow-web-traffic" {
 
   target_tags   = ["web-server"]
   source_ranges = ["0.0.0.0/0"]
-}
-
-resource "google_dns_record_set" "your_domain_a_record" {
-  name         = "ns1.csye6225-vakiti.me."
-  managed_zone = "csye6225-vakiti"
-  type         = "A"
-  ttl          = 300
-  rrdatas      = [google_compute_instance.my-web-server.network_interface[0].access_config[0].nat_ip]
 }
 
 resource "google_service_account" "app_service_account" {
@@ -228,5 +261,98 @@ resource "google_cloudfunctions_function" "user_verification" {
     DB_CONNECTION_NAME = google_sql_database_instance.primary_instance.connection_name
   }
 }
+
+# Existing resources like VPC, subnets, database, and others remain the same.
+
+
+# Create a Health Check
+resource "google_compute_health_check" "webapp_health_check" {
+  name = "webapp-health-check"
+  http_health_check {
+    port         = 8080
+    request_path = "/healthz"
+  }
+  unhealthy_threshold = 10
+}
+
+# Create an Autoscaler
+resource "google_compute_autoscaler" "webapp_autoscaler" {
+  name   = "webapp-autoscaler"
+  zone   = var.zone
+  target = google_compute_instance_group_manager.webapp_manager.id
+  autoscaling_policy {
+    max_replicas = 10
+    min_replicas = 1
+    cpu_utilization {
+      target = 0.05
+    }
+  }
+}
+
+# Create an Instance Group Manager
+resource "google_compute_instance_group_manager" "webapp_manager" {
+  name               = "webapp-manager"
+  base_instance_name = "webapp"
+  zone               = var.zone
+  target_size        = 1
+
+  version {
+    name              = "v1"
+    instance_template = google_compute_instance_template.webapp_template.self_link
+  }
+
+  named_port {
+    name = "http"
+    port = 8080
+  }
+}
+
+resource "google_compute_backend_service" "webapp_backend_service" {
+  name        = "webapp-backend-service"
+  port_name   = "http"
+  protocol    = "HTTP"
+  timeout_sec = 10
+
+  health_checks = [google_compute_health_check.webapp_health_check.id]
+
+  backend {
+    group = google_compute_instance_group_manager.webapp_manager.instance_group
+  }
+}
+
+# Load Balancer Resources
+resource "google_compute_managed_ssl_certificate" "webapp_ssl_cert" {
+  name = "webapp-ssl-cert"
+  managed {
+    domains = ["ns1.csye6225-vakiti.me"]
+  }
+}
+
+resource "google_compute_url_map" "webapp_url_map" {
+  name            = "webapp-url-map"
+  default_service = google_compute_backend_service.webapp_backend_service.id
+}
+
+resource "google_compute_target_https_proxy" "webapp_https_proxy" {
+  name             = "webapp-https-proxy"
+  url_map          = google_compute_url_map.webapp_url_map.id
+  ssl_certificates = [google_compute_managed_ssl_certificate.webapp_ssl_cert.id]
+}
+
+resource "google_compute_global_forwarding_rule" "webapp_forwarding_rule" {
+  name       = "webapp-http-forwarding-rule"
+  target     = google_compute_target_https_proxy.webapp_https_proxy.id
+  port_range = "443"
+}
+
+# Modify DNS record to point to the load balancer
+resource "google_dns_record_set" "your_domain_a_record" {
+  name         = "ns1.csye6225-vakiti.me."
+  managed_zone = "csye6225-vakiti"
+  type         = "A"
+  ttl          = 300
+  rrdatas      = [google_compute_global_forwarding_rule.webapp_forwarding_rule.ip_address]
+}
+
 
 
