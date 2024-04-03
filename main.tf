@@ -55,7 +55,7 @@ resource "google_service_networking_connection" "my_service_connection" {
   reserved_peering_ranges = [google_compute_global_address.default.name]
 }
 
-resource "google_compute_instance_template" "webapp_template" {
+resource "google_compute_region_instance_template" "webapp_template" {
   name_prefix  = "webapp-template-"
   machine_type = var.machine_type
 
@@ -231,10 +231,9 @@ resource "google_compute_health_check" "webapp_health_check" {
 }
 
 # Create an Autoscaler
-resource "google_compute_autoscaler" "webapp_autoscaler" {
+resource "google_compute_region_autoscaler" "webapp_autoscaler" {
   name   = "webapp-autoscaler"
-  zone   = var.zone
-  target = google_compute_instance_group_manager.webapp_manager.id
+  target = google_compute_region_instance_group_manager.webapp_manager.id
   autoscaling_policy {
     max_replicas = 6
     min_replicas = 3
@@ -245,15 +244,14 @@ resource "google_compute_autoscaler" "webapp_autoscaler" {
 }
 
 # Create an Instance Group Manager
-resource "google_compute_instance_group_manager" "webapp_manager" {
+resource "google_compute_region_instance_group_manager" "webapp_manager" {
   name               = "webapp-manager"
   base_instance_name = "webapp"
-  zone               = var.zone
   target_size        = 1
 
   version {
     name              = "v1"
-    instance_template = google_compute_instance_template.webapp_template.self_link
+    instance_template = google_compute_region_instance_template.webapp_template.self_link
   }
 
   named_port {
@@ -271,7 +269,7 @@ resource "google_compute_backend_service" "webapp_backend_service" {
   health_checks = [google_compute_health_check.webapp_health_check.id]
 
   backend {
-    group = google_compute_instance_group_manager.webapp_manager.instance_group
+    group = google_compute_region_instance_group_manager.webapp_manager.instance_group
   }
 }
 
