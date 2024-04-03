@@ -55,47 +55,6 @@ resource "google_service_networking_connection" "my_service_connection" {
   reserved_peering_ranges = [google_compute_global_address.default.name]
 }
 
-# resource "google_compute_instance_template" "webapp_template" {
-#   name                      = var.vm_name
-#   zone                      = var.zone
-#   machine_type              = var.machine_type
-#   tags                      = ["web-server"]
-#   allow_stopping_for_update = true
-
-#   metadata = {
-#     db_host     = google_sql_database_instance.primary_instance.ip_address[0].ip_address
-#     db_user     = google_sql_user.webapp_user.name
-#     db_password = random_password.database_password.result
-#   }
-#   metadata_startup_script = file("startup.sh")
-
-#   boot_disk {
-#     auto_delete = true
-#     device_name = var.vm_name
-#     initialize_params {
-#       image = var.image
-#       size  = var.boot_disk_size
-#       type  = var.boot_disk_type
-#     }
-#   }
-
-#   network_interface {
-#     subnetwork = google_compute_subnetwork.webapp_subnet.name
-#     access_config {
-#       network_tier = "PREMIUM"
-#     }
-#   }
-
-#   service_account {
-#     email = google_service_account.app_service_account.email
-#     scopes = [
-#       "https://www.googleapis.com/auth/logging.admin",
-#       "https://www.googleapis.com/auth/monitoring.write",
-#       "https://www.googleapis.com/auth/pubsub"
-#     ]
-#   }
-# }
-
 resource "google_compute_instance_template" "webapp_template" {
   name_prefix  = "webapp-template-"
   machine_type = var.machine_type
@@ -130,10 +89,6 @@ resource "google_compute_instance_template" "webapp_template" {
   }
 
   tags = ["web-server"]
-
-  lifecycle {
-    create_before_destroy = true
-  }
 }
 
 
@@ -177,7 +132,7 @@ resource "google_compute_firewall" "allow-web-traffic" {
   }
 
   target_tags   = ["web-server"]
-  source_ranges = ["0.0.0.0/0"]
+  source_ranges = [google_compute_global_forwarding_rule.webapp_forwarding_rule.ip_address, "35.191.0.0/16", "130.211.0.0/22"]
 }
 
 resource "google_service_account" "app_service_account" {
@@ -272,7 +227,7 @@ resource "google_compute_health_check" "webapp_health_check" {
     port         = 8080
     request_path = "/healthz"
   }
-  unhealthy_threshold = 10
+  unhealthy_threshold = 5
 }
 
 # Create an Autoscaler
@@ -281,8 +236,8 @@ resource "google_compute_autoscaler" "webapp_autoscaler" {
   zone   = var.zone
   target = google_compute_instance_group_manager.webapp_manager.id
   autoscaling_policy {
-    max_replicas = 10
-    min_replicas = 1
+    max_replicas = 6
+    min_replicas = 3
     cpu_utilization {
       target = 0.05
     }
