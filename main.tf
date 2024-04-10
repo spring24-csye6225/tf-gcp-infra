@@ -19,7 +19,7 @@ resource "google_compute_network" "vpc_network" {
 }
 
 resource "google_compute_subnetwork" "webapp_subnet" {
-  name                     = "webapp"
+  name                     = var.webapp_subnet
   region                   = var.region
   ip_cidr_range            = var.webapp_subnet_cidr
   network                  = google_compute_network.vpc_network.self_link
@@ -27,7 +27,7 @@ resource "google_compute_subnetwork" "webapp_subnet" {
 }
 
 resource "google_compute_subnetwork" "db_subnet" {
-  name                     = "db"
+  name                     = var.db_subnet
   region                   = var.region
   ip_cidr_range            = var.db_subnet_cidr
   network                  = google_compute_network.vpc_network.self_link
@@ -65,7 +65,7 @@ resource "google_service_networking_connection" "my_service_connection" {
 }
 
 resource "google_kms_key_ring" "my_key_ring1" {
-  name     = "my-keyring"
+  name     = var.key_ring_name
   location = var.region
 }
 
@@ -110,29 +110,12 @@ resource "google_compute_region_instance_template" "webapp_template" {
   }
 
   network_interface {
-    queue_count = 0
-    stack_type  = "IPV4_ONLY"
-    subnetwork  = google_compute_subnetwork.webapp_subnet.name
-  }
-
-  can_ip_forward = false
-
-  scheduling {
-    automatic_restart   = true
-    on_host_maintenance = "MIGRATE"
-    preemptible         = false
-    provisioning_model  = "STANDARD"
+    subnetwork = google_compute_subnetwork.webapp_subnet.name
   }
 
   service_account {
     email  = google_service_account.app_service_account.email
     scopes = ["cloud-platform"]
-  }
-
-  shielded_instance_config {
-    enable_integrity_monitoring = true
-    enable_secure_boot          = false
-    enable_vtpm                 = true
   }
 
   tags = ["web-server"]
