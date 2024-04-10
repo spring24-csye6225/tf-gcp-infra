@@ -15,20 +15,23 @@ resource "google_compute_network" "vpc_network" {
   auto_create_subnetworks         = false
   routing_mode                    = var.routing_mode
   delete_default_routes_on_create = true
+
 }
 
 resource "google_compute_subnetwork" "webapp_subnet" {
-  name          = "webapp"
-  region        = var.region
-  ip_cidr_range = var.webapp_subnet_cidr
-  network       = google_compute_network.vpc_network.self_link
+  name                     = "webapp"
+  region                   = var.region
+  ip_cidr_range            = var.webapp_subnet_cidr
+  network                  = google_compute_network.vpc_network.self_link
+  private_ip_google_access = true
 }
 
 resource "google_compute_subnetwork" "db_subnet" {
-  name          = "db"
-  region        = var.region
-  ip_cidr_range = var.db_subnet_cidr
-  network       = google_compute_network.vpc_network.self_link
+  name                     = "db"
+  region                   = var.region
+  ip_cidr_range            = var.db_subnet_cidr
+  network                  = google_compute_network.vpc_network.self_link
+  private_ip_google_access = true
 }
 
 resource "google_compute_route" "webapp_route" {
@@ -87,6 +90,7 @@ resource "google_kms_crypto_key" "storage_bucket_key" {
 resource "google_compute_region_instance_template" "webapp_template" {
   name_prefix  = "webapp-template-"
   machine_type = var.machine_type
+  region       = var.region
 
   metadata = {
     db_host     = google_sql_database_instance.primary_instance.ip_address[0].ip_address
@@ -99,25 +103,37 @@ resource "google_compute_region_instance_template" "webapp_template" {
     source_image = var.image
     auto_delete  = true
     boot         = true
+    mode         = "READ_WRITE"
     disk_encryption_key {
       kms_key_self_link = google_kms_crypto_key.my_vm_cmek.id
     }
   }
 
   network_interface {
-    subnetwork = google_compute_subnetwork.webapp_subnet.name
+    queue_count = 0
+    stack_type  = "IPV4_ONLY"
+    subnetwork  = google_compute_subnetwork.webapp_subnet.name
+  }
+
+  can_ip_forward = false
+
+  scheduling {
+    automatic_restart   = true
+    on_host_maintenance = "MIGRATE"
+    preemptible         = false
+    provisioning_model  = "STANDARD"
   }
 
   service_account {
-    email = google_service_account.app_service_account.email
-    scopes = [
-      "https://www.googleapis.com/auth/logging.admin",
-      "https://www.googleapis.com/auth/monitoring.write",
-      "https://www.googleapis.com/auth/pubsub",
-      "https://www.googleapis.com/auth/cloudkms"
-    ]
+    email  = google_service_account.app_service_account.email
+    scopes = ["cloud-platform"]
   }
 
+  shielded_instance_config {
+    enable_integrity_monitoring = true
+    enable_secure_boot          = false
+    enable_vtpm                 = true
+  }
 
   tags = ["web-server"]
 }
@@ -151,6 +167,16 @@ resource "google_kms_crypto_key_iam_binding" "kms_sql_binding" {
     "serviceAccount:${google_project_service_identity.cloudsql_sa.email}"
   ]
 }
+
+resource "google_kms_key_ring_iam_binding" "ring_rule" {
+  key_ring_id = google_kms_key_ring.my_key_ring1.id
+  role        = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+
+  members = [
+    "serviceAccount:${google_service_account.app_service_account.email}"
+  ]
+}
+
 
 
 resource "google_kms_key_ring_iam_binding" "key_ring_binding" {
@@ -258,7 +284,6 @@ resource "google_storage_bucket" "function_code_bucket" {
     default_kms_key_name = google_kms_crypto_key.storage_bucket_key.id
   }
 
-
 }
 
 resource "google_storage_bucket_object" "function_code" {
@@ -298,10 +323,9 @@ resource "google_cloudfunctions_function" "user_verification" {
     MAILGUN_DOMAIN     = var.mailgun_domain
     DB_CONNECTION_NAME = google_sql_database_instance.primary_instance.connection_name
   }
+
+  service_account_email = google_service_account.app_service_account.email
 }
-
-# Existing resources like VPC, subnets, database, and others remain the same.
-
 
 # Create a Health Check
 resource "google_compute_health_check" "webapp_health_check" {
@@ -391,5 +415,4 @@ resource "google_dns_record_set" "your_domain_a_record" {
 }
 
 data "google_storage_project_service_account" "gcs_account" {
-  project = var.project_name
 }
