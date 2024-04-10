@@ -4,6 +4,12 @@ provider "google" {
   region      = var.region
 }
 
+provider "google-beta" {
+  credentials = file(var.service_key_path)
+  project     = var.project_name
+  region      = var.region
+}
+
 resource "google_compute_network" "vpc_network" {
   name                            = var.vpc_name
   auto_create_subnetworks         = false
@@ -55,6 +61,29 @@ resource "google_service_networking_connection" "my_service_connection" {
   reserved_peering_ranges = [google_compute_global_address.default.name]
 }
 
+resource "google_kms_key_ring" "my_key_ring1" {
+  name     = "my-keyring"
+  location = var.region
+}
+
+resource "google_kms_crypto_key" "my_vm_cmek" {
+  name            = "my-vm-key"
+  key_ring        = google_kms_key_ring.my_key_ring1.id
+  rotation_period = "2592000s"
+}
+
+resource "google_kms_crypto_key" "cloudsql_key" {
+  name            = "cloudsql-key"
+  key_ring        = google_kms_key_ring.my_key_ring1.id
+  rotation_period = "2592000s"
+}
+
+resource "google_kms_crypto_key" "storage_bucket_key" {
+  name            = "storage-bucket-key"
+  key_ring        = google_kms_key_ring.my_key_ring1.id
+  rotation_period = "2592000s"
+}
+
 resource "google_compute_region_instance_template" "webapp_template" {
   name_prefix  = "webapp-template-"
   machine_type = var.machine_type
@@ -70,13 +99,13 @@ resource "google_compute_region_instance_template" "webapp_template" {
     source_image = var.image
     auto_delete  = true
     boot         = true
+    disk_encryption_key {
+      kms_key_self_link = google_kms_crypto_key.my_vm_cmek.id
+    }
   }
 
   network_interface {
     subnetwork = google_compute_subnetwork.webapp_subnet.name
-    access_config {
-      network_tier = "PREMIUM"
-    }
   }
 
   service_account {
@@ -84,13 +113,55 @@ resource "google_compute_region_instance_template" "webapp_template" {
     scopes = [
       "https://www.googleapis.com/auth/logging.admin",
       "https://www.googleapis.com/auth/monitoring.write",
-      "https://www.googleapis.com/auth/pubsub"
+      "https://www.googleapis.com/auth/pubsub",
+      "https://www.googleapis.com/auth/cloudkms"
     ]
   }
+
 
   tags = ["web-server"]
 }
 
+data "google_project" "project" {}
+
+
+resource "google_kms_crypto_key_iam_binding" "kms_vm_binding" {
+  crypto_key_id = google_kms_crypto_key.my_vm_cmek.id
+  role          = "roles/owner"
+
+  members = [
+    "serviceAccount:service-${data.google_project.project.number}@compute-system.iam.gserviceaccount.com"
+  ]
+}
+
+resource "google_kms_crypto_key_iam_binding" "kms_storage_binding" {
+  crypto_key_id = google_kms_crypto_key.storage_bucket_key.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+
+  members = [
+    "serviceAccount:${data.google_storage_project_service_account.gcs_account.email_address}"
+  ]
+}
+
+resource "google_kms_crypto_key_iam_binding" "kms_sql_binding" {
+  crypto_key_id = google_kms_crypto_key.cloudsql_key.id
+  role          = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+
+  members = [
+    "serviceAccount:${google_project_service_identity.cloudsql_sa.email}"
+  ]
+}
+
+
+resource "google_kms_key_ring_iam_binding" "key_ring_binding" {
+  key_ring_id = google_kms_key_ring.my_key_ring1.id
+  role        = "roles/cloudkms.cryptoKeyEncrypterDecrypter"
+  members = [
+    "serviceAccount:${google_project_service_identity.cloudsql_sa.email}",
+    "serviceAccount:${google_service_account.app_service_account.email}",
+    "serviceAccount:${data.google_storage_project_service_account.gcs_account.email_address}"
+  ]
+}
 
 resource "google_sql_database_instance" "primary_instance" {
   name                = var.sql_instance_name
@@ -98,7 +169,7 @@ resource "google_sql_database_instance" "primary_instance" {
   region              = var.region
   deletion_protection = false
   depends_on          = [google_service_networking_connection.my_service_connection]
-
+  encryption_key_name = google_kms_crypto_key.cloudsql_key.id
   settings {
     tier = "db-f1-micro"
 
@@ -106,7 +177,14 @@ resource "google_sql_database_instance" "primary_instance" {
       ipv4_enabled    = false
       private_network = google_compute_network.vpc_network.id
     }
+
   }
+}
+
+resource "google_project_service_identity" "cloudsql_sa" {
+  provider = google-beta
+  project  = var.project_name
+  service  = "sqladmin.googleapis.com"
 }
 
 resource "google_sql_database" "webapp_database" {
@@ -176,6 +254,11 @@ resource "google_storage_bucket" "function_code_bucket" {
   name          = "my-function-code-bucket-vakiti"
   location      = var.region
   force_destroy = true
+  encryption {
+    default_kms_key_name = google_kms_crypto_key.storage_bucket_key.id
+  }
+
+
 }
 
 resource "google_storage_bucket_object" "function_code" {
@@ -307,5 +390,6 @@ resource "google_dns_record_set" "your_domain_a_record" {
   rrdatas      = [google_compute_global_forwarding_rule.webapp_forwarding_rule.ip_address]
 }
 
-
-
+data "google_storage_project_service_account" "gcs_account" {
+  project = var.project_name
+}
