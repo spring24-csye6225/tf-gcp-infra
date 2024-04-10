@@ -22,6 +22,11 @@ variable "project_name" {
   default     = "vakiti-dev"
 }
 
+variable "service_account_email" {
+  description = "GCP service account email"
+  type        = string
+}
+
 variable "webapp_subnet_cidr" {
   description = "CIDR range for the webapp subnet"
   type        = string
@@ -135,3 +140,14 @@ variable "mailgun_domain" {
   type = string
 }
 
+variable "webapp_subnet" {
+  default = "webapp"
+}
+
+variable "db_subnet" {
+  default = "db"
+}
+
+variable "key_ring_name" {
+  default = "my-keyring"
+}
